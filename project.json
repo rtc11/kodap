@@ -1,0 +1,9 @@
+{
+  "targets": {
+    "kodap": {
+      "type": "executable",
+      "sources": ["src/"],
+    },
+  }
+}
+
