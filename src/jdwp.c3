@@ -2,6 +2,7 @@ module jdwp;
 
 import std::io;
 import std::net;
+import std::core::mem;
 
 struct Jdwp
 {
@@ -56,6 +57,13 @@ fn String! Jdwp.vm_classes_by_signature(&self, String jni_signature = "Ljava/lan
     return self.read()!;
 }
 
+fn String! Jdwp.vm_all_classes(&self)
+{
+    Command cmd = { 11, self.seq++, 0, 1, 3 };
+    self.send(cmd)!;
+    return self.read()!;
+}
+
 fn void! Jdwp.handshake(&self) @private
 {
     char[14] res;
@@ -76,8 +84,6 @@ fn void! Jdwp.send(&self, Command c, char[] data = {}) @private
     if (self.socket.write(packet)!! != packet.len) return JdwpErr.SEND_COMMAND?;
 }
 
-const int PADDING = 1024; 
-
 fn String! Jdwp.read(&self) @private
 {
     Reply reply;
@@ -95,9 +101,11 @@ fn String! Jdwp.read(&self) @private
     }
 
     if (data_len > 0) {
-        char[PADDING] data;
-        if (self.socket.read(&data)!! != data_len) return JdwpErr.READ_DATA?;
-        String decoded = decode_string(data[..data_len])!;
+        char* data_ptr = mem::malloc(data_len);
+        defer mem::free(data_ptr);
+        char[] data = data_ptr[..data_len];
+        if (self.socket.read(data)!! != data_len) return JdwpErr.READ_DATA?;
+        String decoded = decode_string(data)!;
         io::printfn("%s", decoded);
         return decoded;
     }

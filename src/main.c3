@@ -9,8 +9,9 @@ fn void main(String[] args)
 {
     Jdwp jdwp = Jdwp.new();
     defer jdwp.close()!!;
-    jdwp.vm_version()!!;
-    jdwp.vm_classes_by_signature("Ljava/lang/String;")!!;
+    // jdwp.vm_version()!!;
+    // jdwp.vm_classes_by_signature("Ljava/lang/String;")!!;
+    jdwp.vm_all_classes()!!;
 }
 
 
