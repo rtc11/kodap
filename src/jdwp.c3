@@ -50,7 +50,7 @@ fn void! Jdwp.connect(&self, String host = "127.0.0.1", uint port = 5005)
 
 fn void! Jdwp.close(&self) => self.socket.close()!;
 
-struct VersionReply
+struct JVersion
 {
     String description;
     int jdwp_major;
@@ -59,12 +59,12 @@ struct VersionReply
     String vm_name;
 }
 
-fn VersionReply! Jdwp.vm_version(&self) 
+fn JVersion! Jdwp.vm_version(&self) 
 {
     self.send({ 11, self.seq++, 0, 1, 1 })!;
     char[] data = self.read()!;
 
-    VersionReply reply;
+    JVersion reply;
     int offset = 0;
 
     reply.description = decode_string(data)!;
@@ -84,11 +84,55 @@ fn VersionReply! Jdwp.vm_version(&self)
     return reply;
 } 
 
-fn String! Jdwp.vm_classes_by_signature(&self, String jni_signature = "Ljava/lang/Object;")
+struct JClass
+{
+    TypeTag ref;
+    long type_id;
+    String signature; // JNI signature (decoded)
+    ClassStatus status;
+}
+fn JClass[]! Jdwp.vm_classes_by_signature(&self, String signature = "Ljava/lang/Object;")
 {
     // header size 11 + 4-byte length prefix for string + string length
-    Command cmd = { 11 + 4 + jni_signature.len, self.seq++, 0, 1, 2 };
-    return self.exchange(cmd, encode_string(jni_signature))!;
+    Command cmd = { 11 + 4 + signature.len, self.seq++, 0, 1, 2 };
+    self.send(cmd, encode_string(signature))!;
+    char[] data = self.read()!;
+
+    int offset = 0;
+    int size = decode_int(data[..offset+4])!;
+    offset+=4;
+    JClass* cls_ptrs = mem::new_array(JClass, size);
+
+    for(int i = 0; i < size; i++) {
+        TypeTag type_tag;
+        char tag = data[offset];
+        switch (tag) {
+            case 1: type_tag = CLASS;
+            case 2: type_tag = INTERFACE; 
+            case 3: type_tag = ARRAY;
+            default: io::printfn("type_tag not set, found: %d", tag);
+        }
+        offset++;
+
+        long type_id = decode_long(data[offset..])!;
+        offset+=8;
+        ClassStatus status;
+        int st = decode_int(data[offset..])!;
+        if (st & 0x01) status = VERIFIED;
+        if (st & 0x02) status = PREPARED;
+        if (st & 0x04) status = INITIALIZED;
+        if (st & 0x08) status = ERROR;
+        offset+=4;
+
+        cls_ptrs[i] = {
+            .ref = type_tag,
+            .type_id = type_id,
+            .signature = signature,
+            .status = status,
+        };
+    }
+    
+    return cls_ptrs[..size - 1];
 }
 
 fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq++, 0, 1, 3 })!;
@@ -198,6 +242,18 @@ fn int! decode_int(char[] data) {
            ((int)(uint)data[1] << 16) | 
            ((int)(uint)data[2] << 8)  |
            ((int)(uint)data[3]);
+}
+
+fn long! decode_long(char[] data) {
+    if (data.len < 8) return JdwpErr.INVALID_DATA?;
+    return ((long)(uint)data[0] << 56) |
+           ((long)(uint)data[1] << 48) |
+           ((long)(uint)data[2] << 40) |
+           ((long)(uint)data[3] << 32) |
+           ((long)(uint)data[4] << 24) |
+           ((long)(uint)data[5] << 16) | 
+           ((long)(uint)data[6] << 8)  |
+           ((long)(uint)data[7]);
 }
 
 fn char[] encode_string(String str) @private
