@@ -4,6 +4,13 @@ import std::io;
 import std::net;
 import std::core::mem;
 
+distinct Byte = char[1];
+distinct Boolean = char[1];
+distinct Int = char[4];
+distinct Long = char[8];
+distinct ObjectID = char[11];
+distinct ThreadId = char[11];
+
 struct Jdwp
 {
     TcpSocket socket;
@@ -43,26 +50,62 @@ fn void! Jdwp.connect(&self, String host = "127.0.0.1", uint port = 5005)
 
 fn void! Jdwp.close(&self) => self.socket.close()!;
 
-fn String! Jdwp.vm_version(&self)
+struct VersionReply
+{
+    String description;
+    int jdwp_major;
+    int jdwp_minor;
+    String vm_version;
+    String vm_name;
+}
+
+fn VersionReply! Jdwp.vm_version(&self) 
 {
     self.send({ 11, self.seq++, 0, 1, 1 })!;
-    return self.read()!; 
-}
+    char[] data = self.read()!;
+
+    VersionReply reply;
+    int offset = 0;
+
+    reply.description = decode_string(data)!;
+    offset += 4 + reply.description.len;
+
+    reply.jdwp_major = decode_int(data[offset..])!;
+    offset += 4;
+
+    reply.jdwp_minor = decode_int(data[offset..])!;
+    offset += 4;
+
+    reply.vm_version = decode_string(data[offset..])!;
+    offset += 4 + reply.vm_version.len;
+
+    reply.vm_name = decode_string(data[offset..])!;
+
+    return reply;
+} 
 
 fn String! Jdwp.vm_classes_by_signature(&self, String jni_signature = "Ljava/lang/Object;")
 {
     // header size 11 + 4-byte length prefix for string + string length
     Command cmd = { 11 + 4 + jni_signature.len, self.seq++, 0, 1, 2 };
-    self.send(cmd, encode_string(jni_signature))!;
-    return self.read()!;
+    return self.exchange(cmd, encode_string(jni_signature))!;
 }
 
-fn String! Jdwp.vm_all_classes(&self)
+fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq++, 0, 1, 3 })!;
+fn String! Jdwp.vm_all_threads(&self) => self.exchange({ 11, self.seq++, 0, 1, 4 })!;
+fn String! Jdwp.vm_top_level_thread_groups(&self) => self.exchange({ 11, self.seq++, 0, 1, 5 })!;
+fn String! Jdwp.vm_dispose(&self) => self.exchange({ 11, self.seq++, 0, 1, 6 })!;
+fn String! Jdwp.vm_id_sizes(&self) => self.exchange({ 11, self.seq++, 0, 1, 7 })!;
+fn String! Jdwp.vm_suspend(&self) => self.exchange({ 11, self.seq++, 0, 1, 8 })!;
+fn String! Jdwp.vm_resume(&self) => self.exchange({ 11, self.seq++, 0, 1, 9 })!;
+fn void! Jdwp.vm_exit(&self) => self.send({ 11, self.seq++, 0, 1, 10 })!;
+fn String! Jdwp.vm_create_string(&self, String str)
 {
-    Command cmd = { 11, self.seq++, 0, 1, 3 };
-    self.send(cmd)!;
-    return self.read()!;
+    // header size 11 + 4-byte length prefix for string + string length
+    Command cmd = { 11 + 4 + str.len, self.seq++, 0, 1, 11 };
+    return self.exchange(cmd, encode_string(str))!;
 }
+
 
 fn void! Jdwp.handshake(&self) @private
 {
@@ -77,20 +120,53 @@ fn void! Jdwp.handshake(&self) @private
     self.socket.read(&res2)!;
 }
 
+fn String! Jdwp.exchange(&self, Command c, char[] data = {})
+{
+    self.send(c, data)!;
+    return self.read_string()!;
+}
+
 fn void! Jdwp.send(&self, Command c, char[] data = {}) @private
 {
-    io::printfn("SEND id:%d flags:%d set:%d cmd:%d len:%d data:%s", c.id, c.flags, c.set, c.cmd, c.length, data);
+    io::printfn("SEND id:%d flags:%3d set:%3d cmd:%d len:%d data:%s", c.id, c.flags, c.set, c.cmd, c.length, data);
     char[] packet = array::tconcat((char[11])c, data);
     if (self.socket.write(packet)!! != packet.len) return JdwpErr.SEND_COMMAND?;
 }
 
-fn String! Jdwp.read(&self) @private
+fn char[]! Jdwp.read(&self) @private
 {
     Reply reply;
     if (self.socket.read((char[11]*)&reply)!! != 11) return JdwpErr.READ_HEADER?;
 
     int data_len = reply.length - 11;
-    io::printfn("READ id:%d flags:%d error:%d len:%d", reply.id, reply.flags, reply.error_code, data_len);
+    io::printfn("READ id:%d flags:%3d error:%d len:%d", reply.id, reply.flags, reply.error_code, data_len);
+
+    if (reply.error_code != 0) {
+        foreach(err: ErrorCode.values) {
+            if (err.code == reply.error_code) {
+                io::printfn("ERROR %d (%s) %s", err.code, err, err.desc);
+            }
+        }
+    }
+
+    if (data_len > 0) {
+        char* data_ptr = mem::malloc(data_len);
+        // defer mem::free(data_ptr); // when or how to free?
+        char[] data = data_ptr[..data_len - 1];
+        if (self.socket.read(data)!! != data_len) return JdwpErr.READ_DATA?;
+        // foreach(ch: data) io::printf("%02X ", ch);
+        // io::printn();
+        return data;
+    }
+    return {};
+}
+fn String! Jdwp.read_string(&self) @private
+{
+    Reply reply;
+    if (self.socket.read((char[11]*)&reply)!! != 11) return JdwpErr.READ_HEADER?;
+
+    int data_len = reply.length - 11;
+    io::printfn("READ id:%d flags:%3d error:%d len:%d", reply.id, reply.flags, reply.error_code, data_len);
 
     if (reply.error_code != 0) {
         foreach(err: ErrorCode.values) {
@@ -103,13 +179,25 @@ fn String! Jdwp.read(&self) @private
     if (data_len > 0) {
         char* data_ptr = mem::malloc(data_len);
         defer mem::free(data_ptr);
-        char[] data = data_ptr[..data_len];
+        char[] data = data_ptr[..data_len - 1];
         if (self.socket.read(data)!! != data_len) return JdwpErr.READ_DATA?;
         String decoded = decode_string(data)!;
         io::printfn("%s", decoded);
+        foreach(ch: data) {
+            io::printf("%x", ch);
+        }
+        io::printn();
         return decoded;
     }
     return "";
+}
+
+fn int! decode_int(char[] data) {
+    if (data.len < 4) return JdwpErr.INVALID_DATA?;
+    return ((int)(uint)data[0] << 24) |
+           ((int)(uint)data[1] << 16) | 
+           ((int)(uint)data[2] << 8)  |
+           ((int)(uint)data[3]);
 }
 
 fn char[] encode_string(String str) @private
@@ -126,9 +214,13 @@ fn char[] encode_string(String str) @private
 fn String! decode_string(char[] bytes) @private
 {
     if (bytes.len < 4) return JdwpErr.INVALID_DATA?;
-    int str_len = ((int)bytes[0] << 24) | ((int)bytes[1] << 16) | ((int)bytes[1] << 8) | ((int)bytes[3]);
-    if (bytes.len < 4 + str_len) return JdwpErr.INVALID_DATA?;
-    return (String) bytes[4..];
+    int str_len = decode_int(bytes)!;
+
+    if (str_len + 4 <= bytes.len) {
+        return (String) bytes[4 .. (str_len + 4 - 1)];
+    }
+    io::printfn("str_len is %d but the buffer is only %d", str_len, bytes.len);
+    return "";
 }
 
 fault JdwpErr {
@@ -139,105 +231,6 @@ fault JdwpErr {
     READ_HEADER,
     READ_DATA,
     INVALID_DATA,
-}
-
-enum Commands: (int set, int cmd)
-{
-    VM_VERSION                                 = { 1, 1 },
-    VM_CLASSES_BY_SIGNATURE                    = { 1, 2 },
-    VM_ALL_CLASSES                             = { 1, 3 },
-    VM_ALL_THREADS                             = { 1, 4 },
-    VM_TOP_LVL_THREAD_GROUPS                   = { 1, 5 },
-    VM_DISPOSE                                 = { 1, 6 },
-    VM_ID_SIZES                                = { 1, 7 },
-    VM_SUSPEND                                 = { 1, 8 },
-    VM_RESUME                                  = { 1, 9 },
-    VM_EXIT                                    = { 1, 10 },
-    VM_CREATE_STRING                           = { 1, 11 },
-    VM_CAPABILITIES                            = { 1, 12 },
-    VM_CLASS_PATHS                             = { 1, 13 },
-    VM_DISPOSE_OBJECTS                         = { 1, 14 },
-    VM_HOLD_EVENTS                             = { 1, 15 },
-    VM_RELEASE_EVENTS                          = { 1, 16 },
-    VM_CAPABILITIES_NEW                        = { 1, 17 },
-    VM_REDEFINE_CLASSES                        = { 1, 18 },
-    VM_SET_DEFAULT_STRATUM                     = { 1, 19 },
-    VM_ALL_CLASSES_WITH_GENERIC                = { 1, 20 },
-    VM_INSTANCE_COUNTS                         = { 1, 21 },
-    VM_ALL_MODULES                             = { 1, 22 },
-    REF_TYPE_SIGNATURE                         = { 2, 1 },
-    REF_TYPE_CLASS_LOADER                      = { 2, 2 },
-    REF_TYPE_MODIFIES                          = { 2, 3 },
-    REF_TYPE_FIELDS                            = { 2, 4 },
-    REF_TYPE_METHODS                           = { 2, 5 },
-    REF_TYPE_GET_VALUES                        = { 2, 6 },
-    REF_TYPE_SOURCE_FILE                       = { 2, 7 },
-    REF_TYPE_NESTED_TYPES                      = { 2, 8 },
-    REF_TYPE_STATUS                            = { 2, 9 },
-    REF_TYPE_INTERFACES                        = { 2, 10 },
-    REF_TYPE_CLASS_OBJECT                      = { 2, 11 },
-    REF_TYPE_SOURCE_DEBUG_EXTENSION            = { 2, 12 },
-    REF_TYPE_SIGNATURE_WITH_GENERIC            = { 2, 13 },
-    REF_TYPE_FIELDS_WITH_GENERIC               = { 2, 14 },
-    REF_TYPE_METHODS_WITH_GENERIC              = { 2, 15 },
-    REF_TYPE_INSTANCES                         = { 2, 16 },
-    REF_TYPE_CLASS_FILE_VERSION                = { 2, 17 },
-    REF_TYPE_CONSTANT_POOL                     = { 2, 18 },
-    REF_TYPE_MODULE                            = { 2, 19 },
-    CLASS_TYPE_SUPERCLASS                      = { 3, 1 },
-    CLASS_TYPE_SET_VALUES                      = { 3, 2 },
-    CLASS_TYPE_INVOKE_METHOD                   = { 3, 3 },
-    CLASS_TYPE_NEW_INSTANCE                    = { 3, 4 },
-    ARRAY_TYPE_NEW_INSTANCE                    = { 4, 1 },
-    INTERFACE_TYPE_INVOKE_METHOD               = { 5, 1 },
-    METHOD_LINE_TABLE                          = { 6, 1 },
-    METHOD_VARIABLE_TABLE                      = { 6, 2 },
-    METHOD_BYTECODES                           = { 6, 3 },
-    METHOD_IS_OBSOLETE                         = { 6, 4 },
-    METHOD_VARIABLE_TABLE_WITH_GENERIC         = { 6, 5 },
-    OBJ_REF_REFERENCE_TYPE                     = { 9, 1 },
-    OBJ_REF_GET_VALUES                         = { 9, 2 },
-    OBJ_REF_SET_VALUES                         = { 9, 3 },
-    OBJ_REF_MONITOR_INFO                       = { 9, 5 },
-    OBJ_REF_INVOKE_METHOD                      = { 9, 6 },
-    OBJ_REF_DISABLE_COLLECTION                 = { 9, 7 },
-    OBJ_REF_ENABLE_COLLECTION                  = { 9, 8 },
-    OBJ_REF_IS_COLLECTED                       = { 9, 9 },
-    OBJ_REF_REFERRING_OBJECTS                  = { 9, 10 },
-    STRING_REF_VALUE                           = { 10, 1 },
-    THREAD_REF_NAME                            = { 11, 1 },
-    THREAD_REF_SUSPEND                         = { 11, 2 },
-    THREAD_REF_RESUME                          = { 11, 3 },
-    THREAD_REF_STATUS                          = { 11, 4 },
-    THREAD_REF_THREAD_GROUP                    = { 11, 5 },
-    THREAD_REF_FRAMES                          = { 11, 6 },
-    THREAD_REF_FRAME_COUNT                     = { 11, 7 },
-    THREAD_REF_OWNED_MONITORS                  = { 11, 8 },
-    THREAD_REF_CURRENT_CONTENDED_MONITOR       = { 11, 9 },
-    THREAD_REF_STOP                            = { 11, 10 },
-    THREAD_REF_INTERRUPT                       = { 11, 11 },
-    THREAD_REF_SUSPEND_COUNT                   = { 11, 12 },
-    THREAD_REF_OWNED_MONITORS_STACK_DEPTH_INFO = { 11, 13 },
-    THREAD_REF_FORCE_EARLY_RETURN              = { 11, 14 },
-    THREAD_REF_IS_VIRTUAL                      = { 11, 15 },
-    THREAD_GROUP_REF_NAME                      = { 12, 1 },
-    THREAD_GROUP_REF_PARENT                    = { 12, 2 },
-    THREAD_GROUP_REF_CHILDREN                  = { 12, 3 },
-    ARRAY_REF_LENGHT                           = { 13, 1 },
-    ARRAY_REF_GET_VALUES                       = { 13, 2 },
-    ARRAY_REF_SET_VALUES                       = { 13, 3 },
-    CLASS_LOADER_REF_VISIBLE_CLASSES           = { 14, 1 },
-    EVENT_REQUEST_SET                          = { 15, 1 },
-    EVENT_REQUEST_CLEAR                        = { 15, 2 },
-    EVENT_REQUEST_CLEAR_ALL_BREAKPOINTS        = { 15, 3 },
-    STACK_FRAME_GET_VALUES                     = { 16, 1 },
-    STACK_FRAME_SET_VALUES                     = { 16, 2 },
-    STACK_FRAME_THIS_OBJECT                    = { 16, 3 },
-    STACK_FRAME_POP_FRAMES                     = { 16, 4 },
-    CLASS_OBJECT_REF_REFLECTED_TYPE            = { 17, 1 },
-    MODULE_REF_NAME                            = { 18, 1 },
-    MODULE_REF_CLASS_LOADER                    = { 18, 2 },
-    EVENT_COMPOSITE                            = { 64, 100 },
 }
 
 enum ErrorCode: (int code, String desc)
