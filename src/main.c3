@@ -10,13 +10,9 @@ fn void main(String[] args)
     Jdwp jdwp = Jdwp.new();
     defer jdwp.close()!!;
 
-    JClass[] classes = jdwp.vm_classes_by_signature("Ljava/lang/String;")!!;
-    foreach(class: classes) {
-        io::printfn("ref:%s", class.ref);
-        io::printfn("type_id:%d", class.type_id);
-        io::printfn("signature:%s", class.signature);
-        io::printfn("status:%s\n", class.status);
-    }
+    // example_classes_by_signature(jdwp);
+    example_version(jdwp);
+
     // jdwp.vm_all_classes()!!;
     // jdwp.vm_create_string("robin")!!;
     // jdwp.vm_create_string("tordly")!!;
@@ -27,3 +23,23 @@ fn void main(String[] args)
     // io::printfn("%d", decode_int(encoded));
 }
 
+fn void example_version(Jdwp jdwp)
+{
+    JVersion v = jdwp.vm_version()!!;
+    io::printfn("description: %s", v.description);
+    io::printfn("jdwp.major:  %d", v.jdwp_major);
+    io::printfn("jdwp.minor:  %d", v.jdwp_minor);
+    io::printfn("vm.version:  %s", v.vm_version);
+    io::printfn("vm.name:     %s", v.vm_name);
+}
+
+fn void example_classes_by_signature(Jdwp jdwp)
+{
+    JClass[] classes = jdwp.vm_classes_by_signature("Ljava/lang/String;")!!;
+    foreach(class: classes) {
+        io::printfn("ref:%s", class.ref);
+        io::printfn("type_id:%d", class.type_id);
+        io::printfn("signature:%s", class.signature);
+        io::printfn("status:%s\n", class.status);
+    }
+}

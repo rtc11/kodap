@@ -238,22 +238,12 @@ fn String! Jdwp.read_string(&self) @private
 
 fn int! decode_int(char[] data) {
     if (data.len < 4) return JdwpErr.INVALID_DATA?;
-    return ((int)(uint)data[0] << 24) |
-           ((int)(uint)data[1] << 16) | 
-           ((int)(uint)data[2] << 8)  |
-           ((int)(uint)data[3]);
+    return bitorder::read(data, IntBE);
 }
 
 fn long! decode_long(char[] data) {
     if (data.len < 8) return JdwpErr.INVALID_DATA?;
-    return ((long)(uint)data[0] << 56) |
-           ((long)(uint)data[1] << 48) |
-           ((long)(uint)data[2] << 40) |
-           ((long)(uint)data[3] << 32) |
-           ((long)(uint)data[4] << 24) |
-           ((long)(uint)data[5] << 16) | 
-           ((long)(uint)data[6] << 8)  |
-           ((long)(uint)data[7]);
+    return bitorder::read(data, LongBE);
 }
 
 fn char[] encode_string(String str) @private
