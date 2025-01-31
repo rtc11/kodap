@@ -4,12 +4,8 @@ import std::io;
 import std::net;
 import std::core::mem;
 
-distinct Byte = char[1];
-distinct Boolean = char[1];
-distinct Int = char[4];
-distinct Long = char[8];
-distinct ObjectID = char[11];
-distinct ThreadId = char[11];
+distinct Id = inline char[8];
+fn long Id.to_long(&self) => decode_long((char[8]*)&self)!!;  
 
 struct Jdwp
 {
@@ -50,107 +46,6 @@ fn void! Jdwp.connect(&self, String host = "127.0.0.1", uint port = 5005)
 
 fn void! Jdwp.close(&self) => self.socket.close()!;
 
-struct JVersion
-{
-    String description;
-    int jdwp_major;
-    int jdwp_minor;
-    String vm_version;
-    String vm_name;
-}
-
-fn JVersion! Jdwp.vm_version(&self) 
-{
-    self.send({ 11, self.seq++, 0, 1, 1 })!;
-    char[] data = self.read()!;
-
-    JVersion reply;
-    int offset = 0;
-
-    reply.description = decode_string(data)!;
-    offset += 4 + reply.description.len;
-
-    reply.jdwp_major = decode_int(data[offset..])!;
-    offset += 4;
-
-    reply.jdwp_minor = decode_int(data[offset..])!;
-    offset += 4;
-
-    reply.vm_version = decode_string(data[offset..])!;
-    offset += 4 + reply.vm_version.len;
-
-    reply.vm_name = decode_string(data[offset..])!;
-
-    return reply;
-} 
-
-struct JClass
-{
-    TypeTag ref;
-    long type_id;
-    String signature; // JNI signature (decoded)
-    ClassStatus status;
-}
-fn JClass[]! Jdwp.vm_classes_by_signature(&self, String signature = "Ljava/lang/Object;")
-{
-    // header size 11 + 4-byte length prefix for string + string length
-    Command cmd = { 11 + 4 + signature.len, self.seq++, 0, 1, 2 };
-    self.send(cmd, encode_string(signature))!;
-    char[] data = self.read()!;
-
-    int offset = 0;
-    int size = decode_int(data[..offset+4])!;
-    offset+=4;
-    JClass* cls_ptrs = mem::new_array(JClass, size);
-
-    for(int i = 0; i < size; i++) {
-        TypeTag type_tag;
-        char tag = data[offset];
-        switch (tag) {
-            case 1: type_tag = CLASS;
-            case 2: type_tag = INTERFACE; 
-            case 3: type_tag = ARRAY;
-            default: io::printfn("type_tag not set, found: %d", tag);
-        }
-        offset++;
-
-        long type_id = decode_long(data[offset..])!;
-        offset+=8;
-        ClassStatus status;
-        int st = decode_int(data[offset..])!;
-        if (st & 0x01) status = VERIFIED;
-        if (st & 0x02) status = PREPARED;
-        if (st & 0x04) status = INITIALIZED;
-        if (st & 0x08) status = ERROR;
-        offset+=4;
-
-        cls_ptrs[i] = {
-            .ref = type_tag,
-            .type_id = type_id,
-            .signature = signature,
-            .status = status,
-        };
-    }
-    
-    return cls_ptrs[..size - 1];
-}
-
-fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq++, 0, 1, 3 })!;
-fn String! Jdwp.vm_all_threads(&self) => self.exchange({ 11, self.seq++, 0, 1, 4 })!;
-fn String! Jdwp.vm_top_level_thread_groups(&self) => self.exchange({ 11, self.seq++, 0, 1, 5 })!;
-fn String! Jdwp.vm_dispose(&self) => self.exchange({ 11, self.seq++, 0, 1, 6 })!;
-fn String! Jdwp.vm_id_sizes(&self) => self.exchange({ 11, self.seq++, 0, 1, 7 })!;
-fn String! Jdwp.vm_suspend(&self) => self.exchange({ 11, self.seq++, 0, 1, 8 })!;
-fn String! Jdwp.vm_resume(&self) => self.exchange({ 11, self.seq++, 0, 1, 9 })!;
-fn void! Jdwp.vm_exit(&self) => self.send({ 11, self.seq++, 0, 1, 10 })!;
-fn String! Jdwp.vm_create_string(&self, String str)
-{
-    // header size 11 + 4-byte length prefix for string + string length
-    Command cmd = { 11 + 4 + str.len, self.seq++, 0, 1, 11 };
-    return self.exchange(cmd, encode_string(str))!;
-}
-
-
 fn void! Jdwp.handshake(&self) @private
 {
     char[14] res;
@@ -170,14 +65,14 @@ fn String! Jdwp.exchange(&self, Command c, char[] data = {})
     return self.read_string()!;
 }
 
-fn void! Jdwp.send(&self, Command c, char[] data = {}) @private
+fn void! Jdwp.send(&self, Command c, char[] data = {})
 {
     io::printfn("SEND id:%d flags:%3d set:%3d cmd:%d len:%d data:%s", c.id, c.flags, c.set, c.cmd, c.length, data);
     char[] packet = array::tconcat((char[11])c, data);
     if (self.socket.write(packet)!! != packet.len) return JdwpErr.SEND_COMMAND?;
 }
 
-fn char[]! Jdwp.read(&self) @private
+fn char[]! Jdwp.read(&self)
 {
     Reply reply;
     if (self.socket.read((char[11]*)&reply)!! != 11) return JdwpErr.READ_HEADER?;
@@ -204,7 +99,7 @@ fn char[]! Jdwp.read(&self) @private
     }
     return {};
 }
-fn String! Jdwp.read_string(&self) @private
+fn String! Jdwp.read_string(&self)
 {
     Reply reply;
     if (self.socket.read((char[11]*)&reply)!! != 11) return JdwpErr.READ_HEADER?;
@@ -246,7 +141,16 @@ fn long! decode_long(char[] data) {
     return bitorder::read(data, LongBE);
 }
 
-fn char[] encode_string(String str) @private
+fn Id! decode_id(char[] data) {
+    if (data.len < 8) return JdwpErr.INVALID_DATA?;
+    char[8] tmp; 
+    for (int t = 0; t < 8; t++) {
+        tmp[t] = data[t];
+    }
+    return (Id) tmp;
+}
+
+fn char[] encode_string(String str)
 {
     int str_len = str.len;
     char[4] length_prefix;
@@ -257,7 +161,7 @@ fn char[] encode_string(String str) @private
     return array::tconcat(length_prefix, (char[]) str);
 }
 
-fn String! decode_string(char[] bytes) @private
+fn String! decode_string(char[] bytes)
 {
     if (bytes.len < 4) return JdwpErr.INVALID_DATA?;
     int str_len = decode_int(bytes)!;
@@ -398,7 +302,7 @@ enum TypeTag: (int code)
     ARRAY     = 3, // ReferenceType is an array
 }
 
-enum Tag: (int cod)
+enum Tag: (int code)
 {
     ARRAY        = 91,  // [ - array object (objectID size)
     BYTE         = 66,  // B - byte value (1 byte)
@@ -444,4 +348,20 @@ enum InvokeOptions: (int code)
     INVOKE_NONVIRTUAL      = 0x02,
 }
 
-// https://docs.oracle.com/en/java/javase/21/docs/specs/jdwp/jdwp-spec.html
+enum ModifierType: (int code)
+{
+    COUNT                 = 1,
+    CONDITIONAL           = 2,
+    THREAD_ONLY           = 3,
+    CLASS_ONLY            = 4,
+    CLASS_MATCH           = 5,
+    CLASS_EXCLUDE         = 6,
+    LOCATION_ONLY         = 7,
+    EXCEPTION_ONLY        = 8,
+    FIELD_ONLY            = 9,
+    STEP                  = 10,
+    INSTANCE_ONLY         = 11,
+    SOURCE_NAME_MATCH     = 12,
+    PLATFORM_THREADS_ONLY = 13,
+}
+
