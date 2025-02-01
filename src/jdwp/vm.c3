@@ -47,7 +47,6 @@ struct Class
 
 fn Class[]! Jdwp.vm_classes_by_signature(&self, String signature = "Ljava/lang/Object;")
 {
-    // header size 11 + 4-byte length prefix for string + string length
     Command cmd = { 11 + 4 + signature.len, self.seq++, 0, 1, 2 };
     self.send(cmd, jdwp::encode_string(signature))!;
     char[] data = self.read()!;
@@ -69,7 +68,6 @@ fn Class[]! Jdwp.vm_classes_by_signature(&self, String signature = "Ljava/lang/O
         }
         offset++;
 
-        // long type_id = jdwp::decode_long(data[offset..])!;
         Id type_id = jdwp::decode_id(data[offset..offset+8])!;
         offset+=8;
         ClassStatus status;
@@ -91,7 +89,54 @@ fn Class[]! Jdwp.vm_classes_by_signature(&self, String signature = "Ljava/lang/O
     return cls_ptrs[..size-1];
 }
 
-fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq++, 0, 1, 3 })!;
+fn Class[]! Jdwp.vm_all_classes(&self)
+{
+    Command cmd = { 11 , self.seq++, 0, 1, 3 };
+    self.send(cmd)!;
+    char[] data = self.read()!;
+
+    int offset = 0;
+    int size = jdwp::decode_int(data[offset..offset+3])!;
+    offset+=4;
+    if (size == 0) return {};
+    Class[] classes = mem::new_array(Class, size);
+
+    int actual_size = 0;
+    for(int i = 0; i < size; i++) {
+        TypeTag type_tag;
+        char tag = data[offset++];
+        switch (tag) {
+            case 1: type_tag = CLASS;
+            case 2: type_tag = INTERFACE; 
+            case 3: type_tag = ARRAY;
+            default: io::printfn("type_tag not set, found: %d", tag);
+        }
+
+        Id type_id = jdwp::decode_id(data[offset..offset+7])!;
+        offset+=8;
+
+        String signature = jdwp::decode_string(data[offset..])!; 
+        offset += 4 + signature.len;
+
+        ClassStatus status;
+        int st = jdwp::decode_int(data[offset..offset+3])!;
+        if (st & 0x01) status = VERIFIED;
+        if (st & 0x02) status = PREPARED;
+        if (st & 0x04) status = INITIALIZED;
+        if (st & 0x08) status = ERROR;
+        offset+=4;
+
+        classes[i] = {
+            .ref = type_tag,
+            .id = type_id,
+            .signature = signature,
+            .status = status,
+        };
+    }
+
+    return classes;
+}
+// fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq++, 0, 1, 3 })!;
 fn String! Jdwp.vm_all_threads(&self) => self.exchange({ 11, self.seq++, 0, 1, 4 })!;
 fn String! Jdwp.vm_top_level_thread_groups(&self) => self.exchange({ 11, self.seq++, 0, 1, 5 })!;
 fn String! Jdwp.vm_dispose(&self) => self.exchange({ 11, self.seq++, 0, 1, 6 })!;

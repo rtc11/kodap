@@ -8,7 +8,8 @@ import jdwp;
 fn void main(String[] args)
 {
     // example_method();
-    example_classes_by_signature();
+    example_all_classes();
+    // example_classes_by_signature();
     // example_version(jdwp);
 
     // jdwp.vm_all_classes()!!;
@@ -32,6 +33,20 @@ fn void example_version()
     io::printfn("jdwp.minor:  %d", v.jdwp_minor);
     io::printfn("vm.version:  %s", v.vm_version);
     io::printfn("vm.name:     %s", v.vm_name);
+}
+
+fn void example_all_classes()
+{
+    Jdwp jdwp = Jdwp.new();
+    defer jdwp.close()!!;
+
+    Class[] classes = jdwp.vm_all_classes()!!;
+    foreach(class: classes) {
+        io::printfn("ref:%s", class.ref);
+        io::printfn("type_id:%s", class.id);
+        io::printfn("signature:%s", class.signature);
+        io::printfn("status:%s\n", class.status);
+    }
 }
 
 fn void example_method()
