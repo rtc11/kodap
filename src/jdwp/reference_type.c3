@@ -10,30 +10,33 @@ struct Method
     int mod_bits; // access flags
 }
 
-fn Method[]! Jdwp.methods(&self, Class class)
+fn void Jdwp.methods(&self, Class class)
 {
-    Command cmd = { 11 + 8, self.seq++, 0, 2, 5 };
-    self.send(cmd, class.id[..])!;
+    Command cmd = { 11 + 8, self.seq+=1, 0, 2, 5 };
+    self.send(cmd, class.id[..])!!;
+}
 
-    char[] data = self.read()!;
+fn Method[] methods(char[] data)
+{
     int offset = 0;
-    int declared = jdwp::decode_int(data[..offset+=4])!;
+    int declared = jdwp::decode_int(data[..offset+=4])!!;
     Method* method_ptrs = mem::new_array(Method, declared);
 
     for (int i = 0; i< declared; i++) {
         Method m;
-        m.id = jdwp::decode_id(data[offset..offset+=8])!;
-        m.name = jdwp::decode_string(data[offset..])!;
+        m.id = jdwp::decode_id(data[offset..offset+=8])!!;
+        m.name = jdwp::decode_string(data[offset..])!!;
         offset += 4 + m.name.len;
-        m.signature = jdwp::decode_string(data[offset..])!;
+        m.signature = jdwp::decode_string(data[offset..])!!;
         offset += 4 + m.signature.len;
-        m.mod_bits = jdwp::decode_int(data[offset..])!;
+        m.mod_bits = jdwp::decode_int(data[offset..])!!;
         offset+=4;
         method_ptrs[i] = m;
     }
 
     return method_ptrs[..declared];
 }
+
 
 enum AccessFlag 
 {
