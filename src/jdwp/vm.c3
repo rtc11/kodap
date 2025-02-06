@@ -31,9 +31,7 @@ fn void Jdwp.vm_version(&self, int id) => self.send({ 11, id, 0, 1, 1 })!!;
 
 fn any version(Reply *reply) 
 {
-    io::printfn("version size: %d", reply.length);
     char[] data = reply.body[:reply.length];
-    // io::printfn("parsing version: %s", data);
     Version* version = mem::new(Version);
     int offset = 0;
 

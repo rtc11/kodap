@@ -101,7 +101,7 @@ fn void Jdwp.poll(&self)
                 mem::copy(reply, &buf[0], n);
                 eval_err(reply.error_code)!!;
                 if (self.debug) io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
-                if (self.debug) io::printfn("READ: %h", reply.body[:n-11]);
+                if (self.debug) io::printfn("READ: %s", reply.body[:n-11]);
 
                 Into into = self.intos[reply.id]!!;
                 self.replies[reply.id] = into(reply);
@@ -118,7 +118,7 @@ fn void Jdwp.poll(&self)
 fn void! Jdwp.send(&self, Command cmd, char[] data = {})
 {
     char[] packet = array::tconcat((char[11])cmd, data);
-    if (self.debug) io::printfn("SEND: %s", self.seq, packet);
+    if (self.debug) io::printfn("SEND: %s", packet);
     if (self.client.write(packet)!! != packet.len) return JdwpErr.SEND_COMMAND?;
 }
 
