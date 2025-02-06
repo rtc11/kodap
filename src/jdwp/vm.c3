@@ -126,6 +126,7 @@ fn any all_classes(Reply *reply)
     offset+=4;
     if (size == 0) return {};
     Class[] classes = mem::new_array(Class, size);
+    // Class* classes = mem::new_array(Class, size);
 
     int actual_size = 0;
     for(int i = 0; i < size; i++) {
@@ -164,7 +165,7 @@ fn any all_classes(Reply *reply)
     ca.array = classes;
     return (any) ca;
 }
-// fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq+=1, 0, 1, 3 })!;
+
 fn void Jdwp.vm_all_threads(&self) => self.send({ 11, self.seq+=1, 0, 1, 4 })!!;
 fn void Jdwp.vm_top_level_thread_groups(&self) => self.send({ 11, self.seq+=1, 0, 1, 5 })!!;
 fn void Jdwp.vm_dispose(&self) => self.send({ 11, self.seq+=1, 0, 1, 6 })!!;
