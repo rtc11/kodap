@@ -22,6 +22,7 @@ struct Jdwp
     Map(<int, Into>) intos;
     bool running;
     Poll p;
+    bool debug;
 }
 
 bitstruct Command : char[11] @bigendian 
@@ -65,7 +66,9 @@ fn void! Jdwp.connect(&self, String host = "127.0.0.1", uint port = 5005)
     self.handshake()!;
 }
 
-fn void Jdwp.close(&self) => self.client.close()!!;
+fn void Jdwp.stop(&self) {
+    self.running = false;
+} 
 
 fn void! Jdwp.handshake(&self) @private
 {
@@ -78,17 +81,12 @@ fn int Jdwp.start_event_loop(&self)
 {
     self.running = true;
     while (self.running) {
-        CInt result = os::poll((Posix_pollfd*) &self.p, (Posix_nfds_t) 1, (CInt) -1);
+        CInt result = os::poll((Posix_pollfd*) &self.p, (Posix_nfds_t) 1, (CInt) 500); // timeout 500ms or -1 for infinite
         if (result < 0) os::socket_error()?!!;
         if (self.p.revents) self.poll();
     }
     io::printfn("event loop stopped");
     return 0;
-}
-
-fn void Jdwp.stop_event_loop(&self)
-{
-    self.running = false;
 }
 
 fn void Jdwp.poll(&self)
@@ -102,14 +100,14 @@ fn void Jdwp.poll(&self)
                 Reply* reply = mem::new_with_padding(Reply, char.sizeof * (n-11));
                 mem::copy(reply, &buf[0], n);
                 eval_err(reply.error_code)!!;
-                // io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
-                // io::printfn("READ: %h", reply.body[:n-11]);
+                if (self.debug) io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
+                if (self.debug) io::printfn("READ: %h", reply.body[:n-11]);
 
                 Into into = self.intos[reply.id]!!;
                 self.replies[reply.id] = into(reply);
 
             } else {
-                io::printfn("EVENT: %s", buf[..n-1]);
+                if(self.debug) io::printfn("EVENT: %s", buf[..n-1]);
                 self.events.push(buf[..n-1]);
             }
             
@@ -120,8 +118,14 @@ fn void Jdwp.poll(&self)
 fn void! Jdwp.send(&self, Command cmd, char[] data = {})
 {
     char[] packet = array::tconcat((char[11])cmd, data);
-    // io::printfn("SEND (%d) %s", self.seq, packet);
+    if (self.debug) io::printfn("SEND: %s", self.seq, packet);
     if (self.client.write(packet)!! != packet.len) return JdwpErr.SEND_COMMAND?;
+}
+
+fn void Jdwp.toggle_debug(&self)
+{
+    self.debug = !self.debug;
+    io::printfn("set debug %s", self.debug);
 }
 
 fn int! decode_int(char[] data) {

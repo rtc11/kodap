@@ -9,8 +9,7 @@ import std::net;
 
 fn void main(String[] args)
 {
-
-    example_poll();
+    event_loop();
 
     // example_set(EventKind.CLASS_PREPARE);
     // example_method();
@@ -19,12 +18,13 @@ fn void main(String[] args)
     // example_version();
 }
 
-fn void example_poll()
+fn void event_loop()
 {
     Jdwp jdwp = Jdwp.new();
-    defer jdwp.close();
+    defer jdwp.client.close()!!;
 
     Thread t;
+    defer t.join()!!;
     t.create((ThreadFn) &Jdwp.start_event_loop, &jdwp)!!;
 
     while RUNNING: (true) {
@@ -37,35 +37,21 @@ fn void example_poll()
                 while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
                 Version *v = anycast(jdwp.replies[id]!!, Version)!!;
                 io::printfn("%s", v);
+            case "debug":
+                jdwp.toggle_debug();
             case "quit": 
-            case "exit": break RUNNING;
+            case "exit": 
+                jdwp.stop();
+                break RUNNING;
             default: io::printfn("%s not implemented", input);
         }
     }
-
-    t.join()!!;
-    jdwp.stop_event_loop();
-    jdwp.vm_exit();
 }
-
-// fn void example_version()
-// {
-//     Jdwp jdwp = Jdwp.new();
-//     defer jdwp.close();
-//
-    // Version v = jdwp.vm_version();
-    // jdwp.vm_version();
-    // io::printfn("description: %s", v.description);
-    // io::printfn("jdwp.major:  %d", v.jdwp_major);
-    // io::printfn("jdwp.minor:  %d", v.jdwp_minor);
-    // io::printfn("vm.version:  %s", v.vm_version);
-    // io::printfn("vm.name:     %s", v.vm_name);
-// }
 
 fn void example_set(EventKind event)
 {
     Jdwp jdwp = Jdwp.new();
-    defer jdwp.close();
+    defer jdwp.stop();
 
     RequestSet set = {
         .event_kind = (char) event.code,
@@ -94,7 +80,7 @@ fn void example_set(EventKind event)
 fn void example_all_classes()
 {
     Jdwp jdwp = Jdwp.new();
-    defer jdwp.close();
+    defer jdwp.stop();
 
     jdwp.vm_all_classes();
     // Class[] classes = jdwp.vm_all_classes();
@@ -109,7 +95,7 @@ fn void example_all_classes()
 // fn void example_method()
 // {
 //     Jdwp jdwp = Jdwp.new();
-//     defer jdwp.close()!!;
+//     defer jdwp.stop()!!;
 //
 //     Class[] classes = jdwp.vm_classes_by_signature("Lapp/MainTest;")!!;
 //     foreach(class: classes) {
@@ -123,7 +109,7 @@ fn void example_all_classes()
 fn void example_classes_by_signature()
 {
     Jdwp jdwp = Jdwp.new();
-    defer jdwp.close();
+    defer jdwp.stop();
 
     // Class[] classes = jdwp.vm_classes_by_signature("Ljava/lang/String;")!!;
     jdwp.vm_classes_by_signature("Lhello/Main;");
