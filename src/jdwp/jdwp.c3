@@ -11,13 +11,15 @@ import std::collections::list;
 distinct Id = inline char[8];
 fn long Id.to_long(&self) => decode_long((char[8]*)&self)!!;  
 
+def Into = fn any(Reply*);
+
 struct Jdwp
 {
     TcpSocket client;
     int seq;
     List(<char[]>) events;
-    Reply reply;
-    // Map(<int, Reply>) replies;
+    Map(<int, any>) replies;
+    Map(<int, Into>) intos;
     bool running;
     Poll p;
 }
@@ -97,86 +99,30 @@ fn void Jdwp.poll(&self)
             usz n = self.client.read(&buf)!!;
             if (n >= 1024) io::printfn("ERROR: event buffer of 1024 is too small for size %d", n);
             if (buf[8] & 0x80) {
-                io::printfn("reply packet");
                 Reply* reply = mem::new_with_padding(Reply, char.sizeof * (n-11));
-                reply = (Reply*) &buf[0];
-                io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
-                io::printfn("READ: %s", (String) reply.body[:n-11]);
-                self.reply = *reply;
+                mem::copy(reply, &buf[0], n);
+                eval_err(reply.error_code)!!;
+                // io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
+                // io::printfn("READ: %h", reply.body[:n-11]);
+
+                Into into = self.intos[reply.id]!!;
+                self.replies[reply.id] = into(reply);
+
             } else {
-                io::printfn("event packet");
+                io::printfn("EVENT: %s", buf[..n-1]);
                 self.events.push(buf[..n-1]);
             }
-            // io::printfn("EVENT: %s", buf[..n-1]);
             
         default: unreachable("unsupported client state");
     }
 }
 
-// fn String! Jdwp.exchange(&self, Command c, char[] data = {})
-// {
-//     self.send(c, data)!;
-//     return self.read_string()!;
-// }
-
 fn void! Jdwp.send(&self, Command cmd, char[] data = {})
 {
-    // io::printfn("SEND len:%d id:%d flags:%3d set:%3d cmd:%d", cmd.id, cmd.flags, cmd.set, cmd.cmd, cmd.length, data);
-    // io::printfn("SEND data:%s", data);
-
     char[] packet = array::tconcat((char[11])cmd, data);
-    io::printfn("SEND (%d) %s", self.seq, packet);
+    // io::printfn("SEND (%d) %s", self.seq, packet);
     if (self.client.write(packet)!! != packet.len) return JdwpErr.SEND_COMMAND?;
 }
-
-// fn char[]! Jdwp.read(&self)
-// {
-//     Reply reply;
-//     if (self.client.read((char[11]*)&reply)!! != 11) return JdwpErr.READ_HEADER?;
-//
-//     int data_len = reply.length - 11;
-//     io::printfn("READ %s", (char[11])reply);
-//     // io::printfn("READ id:%d flags:%3d len:%d error:%d", reply.id, reply.flags, data_len, reply.error_code);
-//
-//     eval_err(reply.error_code)!;
-//
-//     if (data_len > 0) {
-//         char* data_ptr = mem::malloc(data_len);
-//         // defer mem::free(data_ptr); // when or how to free?
-//         char[] data = data_ptr[..data_len - 1];
-//         if (self.client.read(data)!! != data_len) return JdwpErr.READ_DATA?;
-//
-//         io::printfn("READ %s", data);
-//
-//         return data;
-//     }
-//     return {};
-// }
-// fn String! Jdwp.read_string(&self)
-// {
-//     Reply reply;
-//     if (self.client.read((char[11]*)&reply)!! != 11) return JdwpErr.READ_HEADER?;
-//
-//     int data_len = reply.length - 11;
-//     io::printfn("READ id:%d flags:%3d error:%d len:%d", reply.id, reply.flags, reply.error_code, data_len);
-//
-//     eval_err(reply.error_code)!;
-//
-//     if (data_len > 0) {
-//         char* data_ptr = mem::malloc(data_len);
-//         defer mem::free(data_ptr);
-//         char[] data = data_ptr[..data_len - 1];
-//         if (self.client.read(data)!! != data_len) return JdwpErr.READ_DATA?;
-//         String decoded = decode_string(data)!;
-//         io::printfn("%s", decoded);
-//         foreach(ch: data) {
-//             io::printf("%x", ch);
-//         }
-//         io::printn();
-//         return decoded;
-//     }
-//     return "";
-// }
 
 fn int! decode_int(char[] data) {
     if (data.len < 4) return JdwpErr.INVALID_DATA?;
@@ -228,6 +174,7 @@ fault JdwpErr {
     READ_HEADER,
     READ_DATA,
     INVALID_DATA,
+    NOT_FOUND,
 }
 
 fn void! eval_err(int code)
@@ -298,129 +245,66 @@ fn void! eval_err(int code)
 
 fault ErrorCode
 {
-    NONE,
-    INVALID_THREAD,
-    INVALID_THREAD_GROUP,
-    INVALID_PRIORITY,
-    THREAD_NOT_SUSPENDED,
-    THREAD_SUSPENDED,
-    THREAD_NOT_ALIVE,
-    INVALID_OBJECT,
-    INVALID_CLASS,
-    CLASS_NOT_PREPARED,
-    INVALID_METHODID,
-    INVALID_LOCATION,
-    INVALID_FIELDID,
-    INVALID_FRAMEID,
-    NO_MORE_FRAMES,
-    OPAQUE_FRAME,
-    NOT_CURRENT_FRAME,
-    TYPE_MISMATCH,
-    INVALID_SLOT,
-    DUPLICATE,
-    NOT_FOUND,
-    INVALID_MODULE,
-    INVALID_MONITOR,
-    NOT_MONITOR_OWNER,
-    INTERRUPT,
-    INVALID_CLASS_FORMAT,
-    CIRCULAR_CLASS_DEFINITION,
-    FAILS_VERIFICATION,
-    ADD_METHOD_NOT_IMPLEMENTED,
-    SCHEMA_CHANGE_NOT_IMPLEMENTED,
-    INVALID_TYPESTATE,
-    HIERARCHY_CHANGE_NOT_IMPLEMENTED,
-    DELETE_METHOD_NOT_IMPLEMENTED,
-    UNSUPPORTED_VERSION,
-    NAMES_DONT_MATCH,
-    CLASS_MODIFIERS_CHANGE_NOT_IMPLEMENTED,
-    METHOD_MODIFIERS_CHANGE_NOT_IMPLEMENTED,
-    CLASS_ATTRIBUTE_CHANGE_NOT_IMPLEMENTED,
-    NOT_IMPLEMENTED,
-    NULL_POINTER,
-    ABSENT_INFORMATION,
-    INVALID_EVENT_TYPE,
-    ILLEGAL_ARGUMENT,
-    OUT_OF_MEMORY,
-    ACCESS_DENIED,
-    VM_DEAD,
-    INTERNAL,
-    UNATTACHED_THREAD,
-    INVALID_TAG,
-    ALREADY_INVOKING,
-    INVALID_INDEX,
-    INVALID_LENGTH,
-    INVALID_STRING,
-    INVALID_CLASS_LOADER,
-    INVALID_ARRAY,
-    TRANSPORT_LOAD,
-    TRANSPORT_INIT,
+    NONE,                                    // no error has occured
+    INVALID_THREAD,                          // the thread is null or not a valid thread
+    INVALID_THREAD_GROUP,                    // thread group invalid
+    INVALID_PRIORITY,                        // invalid priority
+    THREAD_NOT_SUSPENDED,                    // if the specified thread has not been suspended by an event
+    THREAD_SUSPENDED,                        // thread already suspended
+    THREAD_NOT_ALIVE,                        // not used
+    INVALID_OBJECT,                          // if this reference type has been unloaded and garbage collected
+    INVALID_CLASS,                           // invalid class
+    CLASS_NOT_PREPARED,                      // class has been loaded but not yet prepared
+    INVALID_METHODID,                        // invalid method
+    INVALID_LOCATION,                        // invalid location
+    INVALID_FIELDID,                         // invalid field
+    INVALID_FRAMEID,                         // invalid jframeID
+    NO_MORE_FRAMES,                          // there are no more Java or JNI frames on the call stack
+    OPAQUE_FRAME,                            // info about the frame it unavailable (e.g native frame)
+    NOT_CURRENT_FRAME,                       // operation can only be performed on current frame
+    TYPE_MISMATCH,                           // the variable is not an appropriate type for the function used
+    INVALID_SLOT,                            // invalid slot
+    DUPLICATE,                               // item already set
+    NOT_FOUND,                               // desired element not found
+    INVALID_MODULE,                          // invalid module
+    INVALID_MONITOR,                         // invalid monitor
+    NOT_MONITOR_OWNER,                       // the thread doesnt own the monitor
+    INTERRUPT,                               // the call has been interrupted before completion
+    INVALID_CLASS_FORMAT,                    // the VM attempted to read a class file and determined that the file is malformed or cannot be interpreded as class file
+    CIRCULAR_CLASS_DEFINITION,               // a circularity has been detected while initializing a class
+    FAILS_VERIFICATION,                      // the verifier detected that a class file contained som internal inconsitency or security problem
+    ADD_METHOD_NOT_IMPLEMENTED,              // adding methods has not been implemneted
+    SCHEMA_CHANGE_NOT_IMPLEMENTED,           // schema change has not been implemented
+    INVALID_TYPESTATE,                       // the state of the thread has been modified, and is now incosistent
+    HIERARCHY_CHANGE_NOT_IMPLEMENTED,        // a direct superclass is different for the new class version or..
+    DELETE_METHOD_NOT_IMPLEMENTED,           // the new class version does not declare a method declared in the old class version
+    UNSUPPORTED_VERSION,                     // a class file has a version number not supported by this VM
+    NAMES_DONT_MATCH,                        // the class name defined in the new class file is different from the name in the old class object
+    CLASS_MODIFIERS_CHANGE_NOT_IMPLEMENTED,  // the new class versino has different modifiers and canUnrestrictedlyRedefineClasses is false
+    METHOD_MODIFIERS_CHANGE_NOT_IMPLEMENTED, // a method in the new class versino has different modifiers
+    CLASS_ATTRIBUTE_CHANGE_NOT_IMPLEMENTED,  // the new class versino has a different NestHost, nestMembers, PermittedSubclasses or Record class attribute
+    NOT_IMPLEMENTED,                         // the functionality is not implemented in this VM
+    NULL_POINTER,                            // invalid pointer
+    ABSENT_INFORMATION,                      // desired informatino is not available
+    INVALID_EVENT_TYPE,                      // the specified event type id is not recognized
+    ILLEGAL_ARGUMENT,                        // illegal argument
+    OUT_OF_MEMORY,                           // the function needed to allocate memory and no more memory was available for allocation
+    ACCESS_DENIED,                           // debugging has not been enabled in this VM. JVMTI cannot be used
+    VM_DEAD,                                 // the VM is not running
+    INTERNAL,                                // an unexpected internal error has occured
+    UNATTACHED_THREAD,                       // the thread being used to call this function is not attached to the vm.
+    INVALID_TAG,                             // object type id or class tag
+    ALREADY_INVOKING,                        // previous invoke not complete
+    INVALID_INDEX,                           // index is invalid
+    INVALID_LENGTH,                          // the length is invalid
+    INVALID_STRING,                          // the string is invalid
+    INVALID_CLASS_LOADER,                    // the class loader is invalid
+    INVALID_ARRAY,                           // the array is invalid
+    TRANSPORT_LOAD,                          // unable to load the transport
+    TRANSPORT_INIT,                          // unable to initialize the transport
     NATIVE_METHOD,
-    INVALID_COUNT,
+    INVALID_COUNT,                           // the count is invalid
 }
-
-// enum ErrorCode: (int code, String desc)
-// {
-//     NONE                                    = { 0, "no error has occured" },
-//     INVALID_THREAD                          = { 10, "the thread is null or not a valid thread" },
-//     INVALID_THREAD_GROUP                    = { 11, "thread group invalid" },
-//     INVALID_PRIORITY                        = { 12, "invalid priority" },
-//     THREAD_NOT_SUSPENDED                    = { 13, "if the specified thread has not been suspended by an event" },
-//     THREAD_SUSPENDED                        = { 14, "thread already suspended" },
-//     THREAD_NOT_ALIVE                        = { 15, "not used" },
-//     INVALID_OBJECT                          = { 20, "if this reference type has been unloaded and garbage collected" },
-//     INVALID_CLASS                           = { 21, "invalid class" },
-//     CLASS_NOT_PREPARED                      = { 22, "class has been loaded but not yet prepared" },
-//     INVALID_METHODID                        = { 23, "invalid method" },
-//     INVALID_LOCATION                        = { 24, "invalid location" },
-//     INVALID_FIELDID                         = { 25, "invalid field" },
-//     INVALID_FRAMEID                         = { 30, "invalid jframeID" },
-//     NO_MORE_FRAMES                          = { 31, "there are no more Java or JNI frames on the call stack" },
-//     OPAQUE_FRAME                            = { 32, "info about the frame it unavailable (e.g native frame)" },
-//     NOT_CURRENT_FRAME                       = { 33, "operation can only be performed on current frame" }, 
-//     TYPE_MISMATCH                           = { 34, "the variable is not an appropriate type for the function used" },
-//     INVALID_SLOT                            = { 35, "invalid slot" },
-//     DUPLICATE                               = { 40, "item already set" },
-//     NOT_FOUND                               = { 41, "desired element not found" },
-//     INVALID_MODULE                          = { 42, "invalid module" },
-//     INVALID_MONITOR                         = { 50, "invalid monitor" },
-//     NOT_MONITOR_OWNER                       = { 51, "the thread doesnt own the monitor" },
-//     INTERRUPT                               = { 52, "the call has been interrupted before completion" },
-//     INVALID_CLASS_FORMAT                    = { 60, "the VM attempted to read a class file and determined that the file is malformed or cannot be interpreded as class file" },
-//     CIRCULAR_CLASS_DEFINITION               = { 61, "a circularity has been detected while initializing a class" },
-//     FAILS_VERIFICATION                      = { 62, "the verifier detected that a class file contained som internal inconsitency or security problem" },
-//     ADD_METHOD_NOT_IMPLEMENTED              = { 63, "adding methods has not been implemneted" },
-//     SCHEMA_CHANGE_NOT_IMPLEMENTED           = { 64, "schema change has not been implemented" },
-//     INVALID_TYPESTATE                       = { 65, "the state of the thread has been modified, and is now incosistent" },
-//     HIERARCHY_CHANGE_NOT_IMPLEMENTED        = { 66, "a direct superclass is different for the new class version or.." },
-//     DELETE_METHOD_NOT_IMPLEMENTED           = { 67, "the new class version does not declare a method declared in the old class version" },
-//     UNSUPPORTED_VERSION                     = { 68, "a class file has a version number not supported by this VM" },
-//     NAMES_DONT_MATCH                        = { 69, "the class name defined in the new class file is different from the name in the old class object" },
-//     CLASS_MODIFIERS_CHANGE_NOT_IMPLEMENTED  = { 70, "the new class versino has different modifiers and canUnrestrictedlyRedefineClasses is false" },
-//     METHOD_MODIFIERS_CHANGE_NOT_IMPLEMENTED = { 71, "a method in the new class versino has different modifiers" },
-//     CLASS_ATTRIBUTE_CHANGE_NOT_IMPLEMENTED  = { 72, "the new class versino has a different NestHost, nestMembers, PermittedSubclasses or Record class attribute" },
-//     NOT_IMPLEMENTED                         = { 99, "the functionality is not implemented in this VM" },
-//     NULL_POINTER                            = { 100, "invalid pointer" },
-//     ABSENT_INFORMATION                      = { 101, "desired informatino is not available" }, 
-//     INVALID_EVENT_TYPE                      = { 102, "the specified event type id is not recognized" },
-//     ILLEGAL_ARGUMENT                        = { 103, "illegal argument" },
-//     OUT_OF_MEMORY                           = { 110, "the function needed to allocate memory and no more memory was available for allocation" },
-//     ACCESS_DENIED                           = { 111, "debugging has not been enabled in this VM. JVMTI cannot be used" },
-//     VM_DEAD                                 = { 112, "the VM is not running" },
-//     INTERNAL                                = { 113, "an unexpected internal error has occured" },
-//     UNATTACHED_THREAD                       = { 115, "the thread being used to call this function is not attached to the vm." }, 
-//     INVALID_TAG                             = { 500, "object type id or class tag" },
-//     ALREADY_INVOKING                        = { 502, "previous invoke not complete" },
-//     INVALID_INDEX                           = { 503, "index is invalid" },
-//     INVALID_LENGTH                          = { 504, "the length is invalid" },
-//     INVALID_STRING                          = { 506, "the string is invalid" },
-//     INVALID_CLASS_LOADER                    = { 507, "the class loader is invalid" },
-//     INVALID_ARRAY                           = { 508, "the array is invalid" },
-//     TRANSPORT_LOAD                          = { 509, "unable to load the transport" },
-//     TRANSPORT_INIT                          = { 510, "unable to initialize the transport" },
-//     NATIVE_METHOD                           = { 511, "" },
-//     INVALID_COUNT                           = { 512, "the count is invalid" },
-// }
 
 enum EventKind: (int code)
 {

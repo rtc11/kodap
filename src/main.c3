@@ -30,7 +30,13 @@ fn void example_poll()
     while RUNNING: (true) {
         String input = io::readline()!!.trim();
         switch (input) {
-            case "version": jdwp.send({ 11, jdwp.seq+=1, 0, 1, 1 })!!;
+            case "version": 
+                int id = jdwp.seq += 1;
+                jdwp.intos[id] = (Into)&vm::version;
+                jdwp.vm_version(id);
+                while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
+                Version *v = anycast(jdwp.replies[id]!!, Version)!!;
+                io::printfn("%s", v);
             case "quit": 
             case "exit": break RUNNING;
             default: io::printfn("%s not implemented", input);
@@ -42,19 +48,19 @@ fn void example_poll()
     jdwp.vm_exit();
 }
 
-fn void example_version()
-{
-    Jdwp jdwp = Jdwp.new();
-    defer jdwp.close();
-
+// fn void example_version()
+// {
+//     Jdwp jdwp = Jdwp.new();
+//     defer jdwp.close();
+//
     // Version v = jdwp.vm_version();
-    jdwp.vm_version();
+    // jdwp.vm_version();
     // io::printfn("description: %s", v.description);
     // io::printfn("jdwp.major:  %d", v.jdwp_major);
     // io::printfn("jdwp.minor:  %d", v.jdwp_minor);
     // io::printfn("vm.version:  %s", v.vm_version);
     // io::printfn("vm.name:     %s", v.vm_name);
-}
+// }
 
 fn void example_set(EventKind event)
 {

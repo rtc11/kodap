@@ -4,7 +4,7 @@ import jdwp;
 import std::io;
 import std::net::os;
 
-struct Version
+struct Version (Printable)
 {
     String description;
     int jdwp_major;
@@ -13,28 +13,45 @@ struct Version
     String vm_name;
 }
 
-fn void Jdwp.vm_version(&self) => self.send({ 11, self.seq+=1, 0, 1, 1 })!!;
-
-fn Version vm_version(char[] data) 
+fn usz! Version.to_format(&self, Formatter* f) @dynamic
 {
-    Version reply;
+    return f.printf(`%s
+JDWP: %d.%d
+JVM:  %s
+JDK:  %s`,
+        self.description,
+        self.jdwp_major,
+        self.jdwp_minor,
+        self.vm_version,
+        self.vm_name,
+    );
+}
+
+fn void Jdwp.vm_version(&self, int id) => self.send({ 11, id, 0, 1, 1 })!!;
+
+fn any version(Reply *reply) 
+{
+    io::printfn("version size: %d", reply.length);
+    char[] data = reply.body[:reply.length];
+    // io::printfn("parsing version: %s", data);
+    Version* version = mem::new(Version);
     int offset = 0;
 
-    reply.description = jdwp::decode_string(data)!!;
-    offset += 4 + reply.description.len;
+    version.description = jdwp::decode_string(data)!!;
+    offset += 4 + version.description.len;
 
-    reply.jdwp_major = jdwp::decode_int(data[offset..])!!;
+    version.jdwp_major = jdwp::decode_int(data[offset..])!!;
     offset += 4;
 
-    reply.jdwp_minor = jdwp::decode_int(data[offset..])!!;
+    version.jdwp_minor = jdwp::decode_int(data[offset..])!!;
     offset += 4;
 
-    reply.vm_version = jdwp::decode_string(data[offset..])!!;
-    offset += 4 + reply.vm_version.len;
+    version.vm_version = jdwp::decode_string(data[offset..])!!;
+    offset += 4 + version.vm_version.len;
 
-    reply.vm_name = jdwp::decode_string(data[offset..])!!;
+    version.vm_name = jdwp::decode_string(data[offset..])!!;
 
-    return reply;
+    return (any) version;
 } 
 
 struct Class
