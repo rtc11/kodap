@@ -2,6 +2,7 @@ import std::io;
 import jdwp;
 import std::thread;
 import std::net;
+import std::collections::anylist;
 
 // First start the debugger, through java or gradle
 // JVM ARGS -agentlib:jdwp=transport=dt_socket,server=y,address=8000,suspend=n,quiet=y
@@ -37,13 +38,23 @@ fn void event_loop()
                 while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
                 Version *v = anycast(jdwp.replies[id]!!, Version)!!;
                 io::printfn("%s", v);
+            case "all classes":
+                int id = jdwp.seq += 1;
+                jdwp.intos[id] = (Into)&vm::all_classes;
+                jdwp.vm_all_classes(id);
+                while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
+                ClassArray *ca = anycast(jdwp.replies[id]!!, ClassArray)!!;
+                foreach(class: ca.array) {
+                    io::printfn("%s", class.signature);
+                }
             case "debug":
                 jdwp.toggle_debug();
             case "quit": 
             case "exit": 
                 jdwp.stop();
                 break RUNNING;
-            default: io::printfn("%s not implemented", input);
+            default: 
+                io::printfn("%s not implemented", input);
         }
     }
 }
@@ -77,12 +88,12 @@ fn void example_set(EventKind event)
     // }
 }
 
-fn void example_all_classes()
-{
-    Jdwp jdwp = Jdwp.new();
-    defer jdwp.stop();
-
-    jdwp.vm_all_classes();
+// fn void example_all_classes()
+// {
+//     Jdwp jdwp = Jdwp.new();
+//     defer jdwp.stop();
+//
+//     jdwp.vm_all_classes();
     // Class[] classes = jdwp.vm_all_classes();
     // foreach(class: classes) {
         // io::printfn("ref:%s", class.ref);
@@ -90,7 +101,7 @@ fn void example_all_classes()
         // io::printfn("signature:%s", class.signature);
         // io::printfn("status:%s\n", class.status);
     // }
-}
+// }
 
 // fn void example_method()
 // {
@@ -106,13 +117,13 @@ fn void example_all_classes()
 //     }
 // }
 
-fn void example_classes_by_signature()
-{
-    Jdwp jdwp = Jdwp.new();
-    defer jdwp.stop();
-
+// fn void example_classes_by_signature()
+// {
+//     Jdwp jdwp = Jdwp.new();
+//     defer jdwp.stop();
+//
     // Class[] classes = jdwp.vm_classes_by_signature("Ljava/lang/String;")!!;
-    jdwp.vm_classes_by_signature("Lhello/Main;");
+    // jdwp.vm_classes_by_signature("Lhello/Main;");
     // Class[] classes = jdwp::vm_classes_by_signature("Lhello/Main;");
     // foreach(class: classes) {
     //     io::printfn("ref:%s", class.ref);
@@ -120,4 +131,4 @@ fn void example_classes_by_signature()
     //     io::printfn("signature:%s", class.signature);
     //     io::printfn("status:%s\n", class.status);
     // }
-}
+// }

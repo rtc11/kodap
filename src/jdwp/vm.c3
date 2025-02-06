@@ -3,6 +3,7 @@ module jdwp::vm;
 import jdwp;
 import std::io;
 import std::net::os;
+import std::collections::anylist;
 
 struct Version (Printable)
 {
@@ -106,14 +107,20 @@ fn Class[] vm_classes_by_signature(char[] data, String signature = "Ljava/lang/O
     return cls_ptrs[..size-1];
 }
 
-fn void Jdwp.vm_all_classes(&self)
+fn void Jdwp.vm_all_classes(&self, int id)
 {
-    Command cmd = { 11 , self.seq+=1, 0, 1, 3 };
+    Command cmd = { 11 , id, 0, 1, 3 };
     self.send(cmd)!!;
 }
 
-fn Class[] vm_all_classes(char[] data)
+struct ClassArray
 {
+    Class[] array;
+}
+
+fn any all_classes(Reply *reply)
+{
+    char[] data = reply.body[:reply.length];
     int offset = 0;
     int size = jdwp::decode_int(data[offset..offset+3])!!;
     offset+=4;
@@ -153,7 +160,9 @@ fn Class[] vm_all_classes(char[] data)
         };
     }
 
-    return classes;
+    ClassArray* ca = mem::new_with_padding(ClassArray, Class.sizeof * size);
+    ca.array = classes;
+    return (any) ca;
 }
 // fn String! Jdwp.vm_all_classes(&self) => self.exchange({ 11, self.seq+=1, 0, 1, 3 })!;
 fn void Jdwp.vm_all_threads(&self) => self.send({ 11, self.seq+=1, 0, 1, 4 })!!;

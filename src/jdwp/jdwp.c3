@@ -93,9 +93,9 @@ fn void Jdwp.poll(&self)
 {
     switch (self.p.events) {
         case net::SUBSCRIBE_READ:
-            char[1024] buf;
+            char[1024 * 32] buf;
             usz n = self.client.read(&buf)!!;
-            if (n >= 1024) io::printfn("ERROR: event buffer of 1024 is too small for size %d", n);
+            if (n == 1024 * 32) io::printfn("ERROR: event buffer of 1024*32 is too small for size %d");
             if (buf[8] & 0x80) {
                 Reply* reply = mem::new_with_padding(Reply, char.sizeof * (n-11));
                 mem::copy(reply, &buf[0], n);
