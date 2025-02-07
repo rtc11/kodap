@@ -11,7 +11,7 @@ import std::collections::anylist;
 fn void main(String[] args)
 {
     event_loop();
-
+    
     // example_set(EventKind.CLASS_PREPARE);
     // example_method();
     // example_all_classes();
@@ -43,9 +43,10 @@ fn void event_loop()
                 jdwp.intos[id] = (Into)&vm::all_classes;
                 jdwp.vm_all_classes(id);
                 while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
-                ClassArray *ca = anycast(jdwp.replies[id]!!, ClassArray)!!;
-                foreach(class: ca.array) {
-                    io::printfn("%s", class.signature);
+                    
+                Class[]* classes = anycast(jdwp.replies[id]!!, Class[])!!;
+                foreach(idx, class: classes) {
+                    io::printfn("%d: %s", idx, class.signature);
                 }
             case "debug":
                 jdwp.toggle_debug();

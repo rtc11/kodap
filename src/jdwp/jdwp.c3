@@ -128,22 +128,37 @@ fn void Jdwp.toggle_debug(&self)
     io::printfn("set debug %s", self.debug);
 }
 
-fn int! decode_int(char[] data) {
-    if (data.len < 4) return JdwpErr.INVALID_DATA?;
-    return bitorder::read(data, IntBE);
+fn char! decode_char(char[] data, int* offset)
+{
+    char c = data[*offset];
+    *offset += 1;
+    return c;
 }
 
-fn long! decode_long(char[] data) {
+fn int! decode_int(char[] data, int* offset = null)
+{
+    if (!offset) return JdwpErr.MISSING_OFFSET?;
+    if (data.len - *offset < 4) return JdwpErr.INVALID_DATA?;
+    int i = bitorder::read(data[*offset..], IntBE);
+    *offset += 4;
+    return i;
+}
+
+fn long! decode_long(char[] data)
+{
     if (data.len < 8) return JdwpErr.INVALID_DATA?;
     return bitorder::read(data, LongBE);
 }
 
-fn Id! decode_id(char[] data) {
+fn Id! decode_id(char[] data, int* offset = null)
+{
+    if (!offset) return JdwpErr.MISSING_OFFSET?;
     if (data.len < 8) return JdwpErr.INVALID_DATA?;
     char[8] tmp; 
     for (int t = 0; t < 8; t++) {
-        tmp[t] = data[t];
+        tmp[t] = data[*offset + t];
     }
+    *offset += 8;
     return (Id) tmp;
 }
 
@@ -158,15 +173,18 @@ fn char[] encode_string(String str)
     return array::tconcat(length_prefix, (char[]) str);
 }
 
-fn String! decode_string(char[] bytes)
+fn String! decode_string(char[] data, int* offset = null)
 {
-    if (bytes.len < 4) return JdwpErr.INVALID_DATA?;
-    int str_len = decode_int(bytes)!;
+    if (!offset) return JdwpErr.MISSING_OFFSET?;
+    if (data.len < 4) return JdwpErr.INVALID_DATA?;
+    int str_len = decode_int(data, offset)!;
 
-    if (str_len + 4 <= bytes.len) {
-        return (String) bytes[4 .. (str_len + 4 - 1)];
+    if (data.len >= str_len) {
+        String s = (String) data[*offset .. *offset + str_len - 1];
+        *offset += str_len; 
+        return s;
     }
-    io::printfn("str_len is %d but the buffer is only %d", str_len, bytes.len);
+    io::printfn("data.len %d - offset %d == str_len %d", data.len, *offset, str_len);
     return "";
 }
 
@@ -179,6 +197,7 @@ fault JdwpErr {
     READ_DATA,
     INVALID_DATA,
     NOT_FOUND,
+    MISSING_OFFSET,
 }
 
 fn void! eval_err(int code)

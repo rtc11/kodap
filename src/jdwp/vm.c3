@@ -36,19 +36,11 @@ fn any version(Reply *reply)
     Version* version = mem::new(Version);
     int offset = 0;
 
-    version.description = jdwp::decode_string(data)!!;
-    offset += 4 + version.description.len;
-
-    version.jdwp_major = jdwp::decode_int(data[offset..])!!;
-    offset += 4;
-
-    version.jdwp_minor = jdwp::decode_int(data[offset..])!!;
-    offset += 4;
-
-    version.vm_version = jdwp::decode_string(data[offset..])!!;
-    offset += 4 + version.vm_version.len;
-
-    version.vm_name = jdwp::decode_string(data[offset..])!!;
+    version.description = jdwp::decode_string(data, &offset)!!;
+    version.jdwp_major = jdwp::decode_int(data, &offset)!!;
+    version.jdwp_minor = jdwp::decode_int(data, &offset)!!;
+    version.vm_version = jdwp::decode_string(data, &offset)!!;
+    version.vm_name = jdwp::decode_string(data, &offset)!!;
 
     return (any) version;
 } 
@@ -70,31 +62,27 @@ fn void Jdwp.vm_classes_by_signature(&self, String signature = "Ljava/lang/Objec
 fn Class[] vm_classes_by_signature(char[] data, String signature = "Ljava/lang/Object;")
 {
     int offset = 0;
-    int size = jdwp::decode_int(data[..offset+3])!!;
+    int size = jdwp::decode_int(data, &offset)!!;
     if (size == 0) return {};
-    offset+=4;
     Class* cls_ptrs = mem::new_array(Class, size);
 
     for(int i = 0; i < size; i++) {
         TypeTag type_tag;
-        char tag = data[offset];
+        char tag = jdwp::decode_char(data, &offset)!!;
         switch (tag) {
             case 1: type_tag = CLASS;
             case 2: type_tag = INTERFACE; 
             case 3: type_tag = ARRAY;
             default: io::printfn("type_tag not set, found: %d", tag);
         }
-        offset++;
 
-        Id type_id = jdwp::decode_id(data[offset..offset+8])!!;
-        offset+=8;
+        Id type_id = jdwp::decode_id(data, &offset)!!;
         ClassStatus status;
-        int st = jdwp::decode_int(data[offset..])!!;
+        int st = jdwp::decode_int(data, &offset)!!;
         if (st & 0x01) status = VERIFIED;
         if (st & 0x02) status = PREPARED;
         if (st & 0x04) status = INITIALIZED;
         if (st & 0x08) status = ERROR;
-        offset+=4;
 
         cls_ptrs[i] = {
             .ref = type_tag,
@@ -113,45 +101,33 @@ fn void Jdwp.vm_all_classes(&self, int id)
     self.send(cmd)!!;
 }
 
-struct ClassArray
-{
-    Class[] array;
-}
-
 fn any all_classes(Reply *reply)
 {
     char[] data = reply.body[:reply.length];
     int offset = 0;
-    int size = jdwp::decode_int(data[offset..offset+3])!!;
-    offset+=4;
+    int size = jdwp::decode_int(data, &offset)!!;
     if (size == 0) return {};
     Class[] classes = mem::new_array(Class, size);
-    // Class* classes = mem::new_array(Class, size);
 
     int actual_size = 0;
     for(int i = 0; i < size; i++) {
         TypeTag type_tag;
-        char tag = data[offset++];
+        char tag = jdwp::decode_char(data, &offset)!!;
         switch (tag) {
             case 1: type_tag = CLASS;
             case 2: type_tag = INTERFACE; 
             case 3: type_tag = ARRAY;
             default: io::printfn("type_tag not set, found: %d", tag);
         }
-
-        Id type_id = jdwp::decode_id(data[offset..offset+7])!!;
-        offset+=8;
-
-        String signature = jdwp::decode_string(data[offset..])!!; 
-        offset += 4 + signature.len;
+        Id type_id = jdwp::decode_id(data, &offset)!!;
+        String signature = jdwp::decode_string(data, &offset)!!; 
 
         ClassStatus status;
-        int st = jdwp::decode_int(data[offset..offset+3])!!;
+        int st = jdwp::decode_int(data, &offset)!!;
         if (st & 0x01) status = VERIFIED;
         if (st & 0x02) status = PREPARED;
         if (st & 0x04) status = INITIALIZED;
         if (st & 0x08) status = ERROR;
-        offset+=4;
 
         classes[i] = {
             .ref = type_tag,
@@ -161,9 +137,7 @@ fn any all_classes(Reply *reply)
         };
     }
 
-    ClassArray* ca = mem::new_with_padding(ClassArray, Class.sizeof * size);
-    ca.array = classes;
-    return (any) ca;
+    return @clone(classes);
 }
 
 fn void Jdwp.vm_all_threads(&self) => self.send({ 11, self.seq+=1, 0, 1, 4 })!!;
