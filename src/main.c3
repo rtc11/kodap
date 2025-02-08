@@ -29,8 +29,8 @@ fn void event_loop()
     t.create((ThreadFn) &Jdwp.start_event_loop, &jdwp)!!;
 
     while RUNNING: (true) {
-        String input = io::readline()!!.trim();
-        switch (input) {
+        String[] input = io::readline()!!.trim().tsplit(" ");
+        switch (input[0]) {
             case "version": 
                 int id = jdwp.seq += 1;
                 jdwp.intos[id] = (Into)&vm::version;
@@ -38,15 +38,24 @@ fn void event_loop()
                 while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
                 Version *v = anycast(jdwp.replies[id]!!, Version)!!;
                 io::printfn("%s", v);
-            case "all classes":
-                int id = jdwp.seq += 1;
-                jdwp.intos[id] = (Into)&vm::all_classes;
-                jdwp.vm_all_classes(id);
-                while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
-                    
-                Class[]* classes = anycast(jdwp.replies[id]!!, Class[])!!;
-                foreach(idx, class: classes) {
-                    io::printfn("%d: %s", idx, class.signature);
+            case "classes":
+                switch (input[1]) {
+                    case "all":
+                        int id = jdwp.seq += 1;
+                        jdwp.intos[id] = (Into)&vm::all_classes;
+                        jdwp.vm_all_classes(id);
+                        while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
+                        Class[]* classes = anycast(jdwp.replies[id]!!, Class[])!!;
+                        foreach(idx, class: classes) io::printfn("%d:\n%s", idx, class);
+                    default:
+                        int id = jdwp.seq += 1;
+                        jdwp.intos[id] = (Into)&vm::classes_by_signature;
+                        jdwp.classes_by_signature(id, input[1]);
+                        // jdwp.classes_by_signature(id, "Ljava/lang/Object;");
+                        while (!jdwp.replies.has_key(id)){}; // TODO: add timeout
+                        if(!jdwp.replies[id]!!) continue RUNNING;
+                        Class[]* classes = anycast(jdwp.replies[id]!!, Class[])!!;
+                        foreach(idx, class: classes) io::printfn("%d:\n%s", idx, class);
                 }
             case "debug":
                 jdwp.toggle_debug();

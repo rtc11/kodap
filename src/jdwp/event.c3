@@ -4,6 +4,23 @@ import jdwp;
 import std::io;
 
 
+fn void Jdwp.set_breakpoint(&self, int id, Id class, Id method, usz line)
+{
+
+    RequestSet set = {
+        .event_kind = (char) EventKind.CLASS_PREPARE.code,
+        .suspend_policy = (char) SuspendPolicy.NONE.code,
+        .modifiers_count = 1,
+    };
+
+    RequestSetModifier mod = {
+        .kind = ModifierType.CLASS_MATCH.code,
+        .string = "*.Hello",
+    };
+
+    self.set(set, mod);
+}
+
 // [Command][RequestSet][RequestSetModifier][RequestSetModifier][..]
 fn void Jdwp.set(&self, RequestSet set, RequestSetModifier mod)
 {

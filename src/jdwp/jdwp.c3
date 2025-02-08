@@ -144,10 +144,13 @@ fn int! decode_int(char[] data, int* offset = null)
     return i;
 }
 
-fn long! decode_long(char[] data)
+fn long! decode_long(char[] data, int* offset = null)
 {
-    if (data.len < 8) return JdwpErr.INVALID_DATA?;
-    return bitorder::read(data, LongBE);
+    if (!offset) return JdwpErr.MISSING_OFFSET?;
+    if (data.len - *offset < 8) return JdwpErr.INVALID_DATA?;
+    long l = bitorder::read(data, LongBE);
+    *offset += 8;
+    return l;
 }
 
 fn Id! decode_id(char[] data, int* offset = null)
