@@ -4,30 +4,25 @@ import jdwp;
 import std::io;
 
 
-fn void Jdwp.set_breakpoint(&self, int id, Id class, Id method, usz line)
+fn any set(Reply *reply)
 {
-
-    RequestSet set = {
-        .event_kind = (char) EventKind.CLASS_PREPARE.code,
-        .suspend_policy = (char) SuspendPolicy.NONE.code,
-        .modifiers_count = 1,
-    };
-
-    RequestSetModifier mod = {
-        .kind = ModifierType.CLASS_MATCH.code,
-        .string = "*.Hello",
-    };
-
-    self.set(set, mod);
+    char[] data = reply.body[:reply.length];
+    int offset = 0;
+    int request_id = jdwp::decode_int(data, &offset)!!;
+    return @clone(request_id);
 }
 
-// [Command][RequestSet][RequestSetModifier][RequestSetModifier][..]
-fn void Jdwp.set(&self, RequestSet set, RequestSetModifier mod)
+fn void Jdwp.set(&self, int id, RequestSet set, RequestSetModifier* mod)
 {
-    char[] mod_ch = mod.to_char();
-    Command cmd = { 11 + $sizeof(set) + mod_ch.len, self.seq+=1, 0, 15, 1 };
-    char[] set_mods = array::tconcat((char[6])set, mod_ch);
-    self.send(cmd, set_mods)!!;
+    if(mod) {
+        char[] mod_ch = mod.to_char();
+        Command cmd = { 11 + $sizeof(set) + mod_ch.len, id, 0, 15, 1 };
+        char[] set_mods = array::tconcat((char[6])set, mod_ch);
+        self.send(cmd, set_mods)!!;
+    } else {
+        Command cmd = { 11 + $sizeof(set), id, 0, 15, 1 };
+        self.send(cmd, (char[6]*) &set)!!;
+    }
 }
 
 bitstruct RequestSet: char[6] @bigendian
@@ -68,10 +63,6 @@ fn char[] RequestSetModifier.to_char(&self)
     switch (self.kind) {
         case ModifierType.COUNT.code:
             char[] bits = (char[5]*) self;
-            // char[4] buf;
-            // char[1] kind = {self.kind};
-            // bitorder::write(self.count, &buf, IntBE);
-            // return array::tconcat(kind, buf[..]);
             return bits;
         case ModifierType.CLASS_MATCH.code: 
         case ModifierType.LOCATION_ONLY.code:
@@ -81,48 +72,5 @@ fn char[] RequestSetModifier.to_char(&self)
     }
 
     return {};
-}
-
-// fn int! Jdwp.set_breakpoint(&self, Class class, Method method)
-// {
-//     RequestSet break_point = {
-//         .event_kind = EventKind.BREAKPOINT.code,
-//         .suspend_policy = SuspendPolicy.ALL.code,
-//         .modifiers_count = 1,
-//     };
-//
-//     Location location = {
-//         .type_tag = TypeTag.CLASS.code,
-//         .class_id = class.id.to_long(),
-//         .method_id = method.id.to_long(),
-//     };
-//
-//     char* location_ptr = mem::malloc($sizeof(location));
-//     char[] location_buf = location_ptr[..$sizeof(location)-1];
-//     // todo: putt location inn i location_buf
-//     RequestSetModifier modifier = {
-//         .kind = ModifierType.LOCATION_ONLY.code,
-//         .string = (String) location_buf,
-//     };
-//
-//     return self.set(break_point, modifier);
-// }
-
-bitstruct Location: char[25]
-{
-    char type_tag:  0..7;    // TypeTag
-    long class_id:  8..71;   // Id
-    long method_id: 72..135; // Id
-    long location:  136..199;//
-}
-
-fn void Jdwp.clear(&self)
-{
-
-}
-
-fn void Jdwp.clear_all_breakpoints(&self)
-{
-
 }
 

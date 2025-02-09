@@ -50,6 +50,7 @@ fn Jdwp Jdwp.new() @operator(construct)
 {
     Jdwp jdwp;
     jdwp.seq = 0;
+    jdwp.debug = true;
     jdwp.connect()!!;
     return jdwp;
 }
@@ -103,8 +104,13 @@ fn void Jdwp.poll(&self)
                 if (self.debug) io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
                 if (self.debug) io::printfn("READ: %s", reply.body[:n-11]);
 
-                Into into = self.intos[reply.id]!!;
-                self.replies[reply.id] = into(reply);
+                if (self.intos.has_key(reply.id)) {
+                    Into into = self.intos[reply.id]!!;
+                    self.replies[reply.id] = into(reply);
+                } else {
+                    if(self.debug) io::printfn("EVENT: %s", buf[..n-1]);
+                    self.events.push(buf[..n-1]);
+                }
 
             } else {
                 if(self.debug) io::printfn("EVENT: %s", buf[..n-1]);
