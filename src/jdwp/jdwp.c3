@@ -112,9 +112,11 @@ fn void Jdwp.poll(&self)
                     self.events.push(buf[..n-1]);
                 }
 
-            } else {
+            } else if (n > 0) {
                 if(self.debug) io::printfn("EVENT: %s", buf[..n-1]);
                 self.events.push(buf[..n-1]);
+            } else {
+                self.stop();
             }
             
         default: unreachable("unsupported client state");

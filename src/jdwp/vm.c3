@@ -114,6 +114,7 @@ fn any all_classes(Reply *reply)
     char[] data = reply.body[:reply.length];
     int offset = 0;
     int size = jdwp::decode_int(data, &offset)!!;
+    if (size == 0) return {};
     Class[] classes = mem::new_array(Class, size);
     if (size == 0) return null;
 
@@ -153,7 +154,7 @@ fn void Jdwp.vm_top_level_thread_groups(&self) => self.send({ 11, self.seq+=1, 0
 fn void Jdwp.vm_dispose(&self) => self.send({ 11, self.seq+=1, 0, 1, 6 })!!;
 fn void Jdwp.vm_id_sizes(&self) => self.send({ 11, self.seq+=1, 0, 1, 7 })!!;
 fn void Jdwp.vm_suspend(&self) => self.send({ 11, self.seq+=1, 0, 1, 8 })!!;
-fn void Jdwp.vm_resume(&self) => self.send({ 11, self.seq+=1, 0, 1, 9 })!!;
+fn void Jdwp.vm_resume(&self) => self.send({ 11, self.seq+1, 0, 1, 9 })!!;
 fn void Jdwp.vm_exit(&self) => self.send({ 11, self.seq+=1, 0, 1, 10 })!!;
 // fn String Jdwp.vm_create_string(&self, String str)
 // {

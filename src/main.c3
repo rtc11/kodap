@@ -41,8 +41,8 @@ fn void event_loop()
                     Class[]* classes = anycast(jdwp.replies[id]!!, Class[])!!;
                     // foreach(idx, class: classes) io::printfn("%d:\n%s", idx, class);
                     foreach(idx, class: classes) io::printfn("%d: %s", idx, class.signature);
-                case "debug":
-                    jdwp.toggle_debug();
+                case "resume": jdwp.vm_resume();
+                case "debug": jdwp.toggle_debug();
                 case "quit": 
                 case "exit": 
                     jdwp.stop();
