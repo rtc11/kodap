@@ -17,7 +17,7 @@ struct Jdwp
 {
     TcpSocket client;
     int seq;
-    List(<char[]>) events;
+    Map(<int, List(<Event*>)>) events;
     Map(<int, any>) replies;
     Map(<int, Into>) intos;
     bool running;
@@ -96,29 +96,55 @@ fn void Jdwp.poll(&self)
         case net::SUBSCRIBE_READ:
             char[1024 * 32] buf;
             usz n = self.client.read(&buf)!!;
-            if (n == 1024 * 32) io::printfn("ERROR: event buffer of 1024*32 is too small for size %d");
+            if (n == 1024 * 32) {
+                io::printfn("ERROR: event buffer of 1024*32 is too small for size %d");
+                return;
+            }
+            if (n == 14 && (String) buf[:14] == "JDWP-Handshake") {
+                io::printfn("HANDSHAKE SUCCESS!");
+                return;
+            }
+            if (n == 0) { 
+                io::printfn("STOPPING..");
+                self.stop();
+                return;
+            }
             if (buf[8] & 0x80) {
                 Reply* reply = mem::new_with_padding(Reply, char.sizeof * (n-11));
                 mem::copy(reply, &buf[0], n);
                 eval_err(reply.error_code)!!;
-                if (self.debug) io::printfn("READ: length:%d id:%d flags:%3d error:%d", reply.length, reply.id, reply.flags, reply.error_code);
-                if (self.debug) io::printfn("READ: %s", reply.body[:n-11]);
-
-                if (self.intos.has_key(reply.id)) {
+                if (self.debug) io::printfn("READ: length:%d id:%d flags:%3d error:%d body:%s", reply.length, reply.id, reply.flags, reply.error_code, reply.body[:n-11]);
+                if (self.intos.has_key(reply.id) && buf[8] & 0x80) {
                     Into into = self.intos[reply.id]!!;
                     self.replies[reply.id] = into(reply);
-                } else {
-                    if(self.debug) io::printfn("EVENT: %s", buf[..n-1]);
-                    self.events.push(buf[..n-1]);
-                }
-
-            } else if (n > 0) {
-                if(self.debug) io::printfn("EVENT: %s", buf[..n-1]);
-                self.events.push(buf[..n-1]);
+                } 
             } else {
-                self.stop();
+                int offset = 0;
+                do {
+                    // event might contain multiple event. event.length tells how long the event is.
+                    // [0, 0, 0, 12, 0, 0, 0, 1, 0, 64, 100, 0, 0, 0, 0, 13, 0, 0, 0, 1, 0, 64, 100, 0, 0]
+                    //            ^len                                   ^ len
+                    Event* e = mem::new(Event);
+                    mem::copy(e, &buf[offset], 11);
+                    Event* event = mem::new_with_padding(Event, char.sizeof * (e.length-(long)11));
+                    mem::copy(event, &buf[offset], e.length);
+                    offset+=e.length;
+                    if (!self.events.has_key(event.id)) {
+                        List(<Event*>) list;
+                        self.events[event.id] = list;
+                    }
+                    self.events[event.id]!!.push(event);
+                } while (n > offset);
+
+                // Event* event = mem::new_with_padding(Event, char.sizeof * (n-11);
+                // mem::copy(event, &buf[0], n);
+                // if (!self.events.has_key(event.id)) {
+                //     List(<char[]>) list;
+                //     self.events[event.id] = list;
+                // }
+                // self.events[event.id]!!.push(buf[..n-1]);
+                // io::printfn("EVENT: %s", buf[..n-1]);
             }
-            
         default: unreachable("unsupported client state");
     }
 }
